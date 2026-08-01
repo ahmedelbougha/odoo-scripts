@@ -8,16 +8,18 @@ Running the script performs the following steps:
 
 1. Installs system dependencies (`git`, `build-essential`, Python dev headers, PostgreSQL, Nginx, etc.) via `apt-get`.
 2. Installs the official patched-Qt build of `wkhtmltopdf` (required by Odoo for PDF report generation), if not already installed.
-3. Creates a system user named `odoo`.
-4. Creates a PostgreSQL role for the Odoo instance with a randomly generated password.
-5. Clones the requested Odoo version from GitHub into `/opt/odoo<version>`.
-6. Clones the Enterprise addons repo as well, if `--edition enterprise` is selected.
-7. Creates a Python virtual environment and installs Odoo's `requirements.txt`.
-8. Generates an Odoo config file at `/etc/odoo/odoo<version>.conf` with a random admin password and the database credentials.
-9. Creates and enables a systemd service (`odoo<version>.service`) to run Odoo.
-10. Creates an Nginx reverse proxy site for the given domain and enables it.
-11. Reloads systemd/Nginx and starts the Odoo service.
-12. Writes generated credentials to `/root/odoo<version>_installation.json` and `/root/odoo<version>_credentials.txt`.
+3. Installs `libsass` via `pip3`, which Odoo uses to compile its SCSS assets — required for the web UI to render correctly.
+4. Installs `rtlcss` via `npm`, if `--with-rtl` is passed — only needed to support right-to-left languages (Arabic, Hebrew, etc.); Odoo skips RTL asset generation if it's absent.
+5. Creates a system user named `odoo`.
+6. Creates a PostgreSQL role for the Odoo instance with a randomly generated password.
+7. Clones the requested Odoo version from GitHub into `/opt/odoo<version>`.
+8. Clones the Enterprise addons repo as well, if `--edition enterprise` is selected.
+9. Creates a Python virtual environment and installs Odoo's `requirements.txt`.
+10. Generates an Odoo config file at `/etc/odoo/odoo<version>.conf` with a random admin password and the database credentials.
+11. Creates and enables a systemd service (`odoo<version>.service`) to run Odoo.
+12. Creates an Nginx reverse proxy site for the given domain and enables it.
+13. Reloads systemd/Nginx and starts the Odoo service.
+14. Writes generated credentials to `/root/odoo<version>_installation.json` and `/root/odoo<version>_credentials.txt`.
 
 Existing config/service files are backed up (`.bak`) before being overwritten.
 
@@ -65,6 +67,7 @@ python3 install_odoo.py --version 17 --edition community --domain odoo.example.c
 | `--github-user` | Only for Enterprise | — | GitHub username with access to `odoo/enterprise` |
 | `--github-token` | Only for Enterprise | — | GitHub personal access token |
 | `--port` | No | `8069` | Local port Odoo listens on (proxied by Nginx) |
+| `--with-rtl` | No | `False` | Install `rtlcss` for right-to-left language support (Arabic, Hebrew, etc.) |
 | `--dry-run` | No | `False` | Print the apt install commands and exit without changing anything |
 
 ## What gets created

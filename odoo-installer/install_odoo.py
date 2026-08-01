@@ -38,6 +38,8 @@ def main():
     ap.add_argument("--github-user")
     ap.add_argument("--github-token")
     ap.add_argument("--port", type=int, default=8069)
+    ap.add_argument("--with-rtl", action="store_true",
+                     help="Install rtlcss for right-to-left language support (Arabic, Hebrew, etc.)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -55,16 +57,32 @@ def main():
         "xfonts-75dpi xfonts-base fontconfig libjpeg-turbo8 libxrender1"
     ]
 
+    npm_cmds = []
+    if args.with_rtl:
+        npm_cmds.append("npm install -g rtlcss")
+
+    pip_cmds = [
+        "pip3 install libsass",
+    ]
+
     if args.dry_run:
         print("DRY RUN")
         for c in cmds: print(c)
         print(f"curl -fsSL -o /tmp/wkhtmltox.deb {WKHTMLTOPDF_URL} && apt-get install -y /tmp/wkhtmltox.deb")
+        for c in npm_cmds: print(c)
+        for c in pip_cmds: print(c)
         return
 
     for c in cmds:
         run(c)
 
     install_wkhtmltopdf()
+
+    for c in npm_cmds:
+        run(c)
+
+    for c in pip_cmds:
+        run(c)
 
     run("id -u odoo >/dev/null 2>&1 || adduser --system --home=/opt/odoo --group odoo", check=False)
 
