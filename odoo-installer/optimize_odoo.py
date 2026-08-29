@@ -6,7 +6,7 @@ RAM / CPU / disk. Writes managed keys into the Odoo .conf and a PostgreSQL
 drop-in file. Does NOT restart services -- prints the restart commands.
 """
 
-import argparse, os, re, shutil, subprocess, sys
+import argparse, os, re, shutil, subprocess
 from collections import OrderedDict
 from datetime import date
 from pathlib import Path
@@ -138,14 +138,16 @@ def detect_os(release_path="/etc/os-release"):
 
 
 def host_facts(conf_path):
-    ram_mb = 0
+    ram_mb = None
     try:
         for line in Path("/proc/meminfo").read_text().splitlines():
             if line.startswith("MemTotal:"):
                 ram_mb = int(line.split()[1]) // 1024
                 break
     except OSError:
-        pass
+        raise SystemExit("cannot read /proc/meminfo; RAM detection failed")
+    if ram_mb is None:
+        raise SystemExit("cannot read /proc/meminfo; RAM detection failed")
 
     cpus = os.cpu_count() or 1
 
@@ -170,8 +172,19 @@ def ensure_include_dir(pg_conf_path):
     return True
 
 
+def has_options_section(path):
+    try:
+        text = Path(path).read_text()
+    except OSError as e:
+        raise SystemExit(f"{path}: {e}")
+    return any(line.strip() == "[options]" for line in text.splitlines())
+
+
 def rewrite_odoo_conf(path, odoo_vals):
-    lines = Path(path).read_text().splitlines()
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError as e:
+        raise SystemExit(f"{path}: {e}")
 
     header_idx = None
     for i, line in enumerate(lines):
@@ -208,7 +221,10 @@ def rewrite_odoo_conf(path, odoo_vals):
     # Normalize trailing newline: strip trailing empty strings, then add exactly one
     while out and out[-1] == "":
         out.pop()
-    Path(path).write_text("\n".join(out) + "\n")
+    try:
+        Path(path).write_text("\n".join(out) + "\n")
+    except OSError as e:
+        raise SystemExit(f"{path}: {e}")
 
 
 def build_parser():
@@ -231,6 +247,9 @@ def main(argv=None):
 
     if not os.path.exists(args.odoo_conf):
         raise SystemExit(f"{args.odoo_conf}: not found")
+
+    if not has_options_section(args.odoo_conf):
+        raise SystemExit(f"{args.odoo_conf}: no [options] section; not a valid Odoo config")
 
     usable_ram = ram_mb - args.reserve_ram_mb
     if usable_ram < 1024:
@@ -255,8 +274,11 @@ def main(argv=None):
     backup_file(args.odoo_conf)
     rewrite_odoo_conf(args.odoo_conf, odoo_vals)
 
-    os.makedirs(confdir, exist_ok=True)
-    Path(f"{confdir}/{PG_DROPIN_NAME}").write_text(dropin_text)
+    try:
+        os.makedirs(confdir, exist_ok=True)
+        Path(f"{confdir}/{PG_DROPIN_NAME}").write_text(dropin_text)
+    except OSError as e:
+        raise SystemExit(f"{confdir}: {e}")
 
     if os_name in ("centos", "rhel"):
         pg_conf = f"/var/lib/pgsql/{args.pg_version}/data/postgresql.conf"

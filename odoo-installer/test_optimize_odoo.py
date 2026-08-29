@@ -5,6 +5,8 @@ import re
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import optimize_odoo
 
@@ -445,6 +447,63 @@ class MainDryRunTests(unittest.TestCase):
         # restart instructions printed, nothing restarted
         self.assertIn("systemctl restart odoo17", out)
         self.assertIn("restarts nothing", out)
+
+
+class MainValidationTests(unittest.TestCase):
+    def _write(self, text):
+        fd, p = tempfile.mkstemp(suffix=".conf")
+        os.close(fd)
+        Path(p).write_text(text)
+        self.addCleanup(os.unlink, p)
+        self.addCleanup(lambda: os.path.exists(p + ".bak") and os.unlink(p + ".bak"))
+        return p
+
+    def test_dry_run_rejects_missing_options_section(self):
+        p = self._write("[other]\nfoo = bar\n")
+        with self.assertRaises(SystemExit):
+            optimize_odoo.main(
+                ["--odoo-version", "17", "--odoo-conf", p,
+                 "--pg-version", "16", "--pg-confdir", "/tmp/x", "--dry-run"]
+            )
+        self.assertFalse(os.path.exists(p + ".bak"))
+
+    def test_apply_rejects_missing_options_section_before_backup(self):
+        p = self._write("[other]\nfoo = bar\n")
+        confdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, confdir)
+        with self.assertRaises(SystemExit):
+            optimize_odoo.main(
+                ["--odoo-version", "17", "--odoo-conf", p,
+                 "--pg-version", "16", "--pg-confdir", confdir]
+            )
+        self.assertFalse(os.path.exists(p + ".bak"))
+
+    def test_makedirs_failure_is_systemexit_not_oserror(self):
+        p = self._write("[options]\nadmin_passwd = SECRET\ndb_user = odoo17\n")
+        fd, filepath = tempfile.mkstemp()
+        os.close(fd)
+        self.addCleanup(os.unlink, filepath)
+        # confdir whose parent is a regular file -> makedirs raises NotADirectoryError
+        bad_confdir = os.path.join(filepath, "sub")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            with self.assertRaises(SystemExit):
+                optimize_odoo.main(
+                    ["--odoo-version", "17", "--odoo-conf", p,
+                     "--pg-version", "16", "--pg-confdir", bad_confdir]
+                )
+
+    def test_host_facts_raises_systemexit_when_meminfo_unreadable(self):
+        real_read_text = Path.read_text
+
+        def fake_read_text(self, *a, **kw):
+            if str(self) == "/proc/meminfo":
+                raise OSError("boom")
+            return real_read_text(self, *a, **kw)
+
+        with mock.patch.object(optimize_odoo.Path, "read_text", fake_read_text):
+            with self.assertRaises(SystemExit):
+                optimize_odoo.host_facts(__file__)
 
 
 if __name__ == "__main__":
