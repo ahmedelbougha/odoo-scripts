@@ -90,5 +90,59 @@ class ComputeOdooTests(unittest.TestCase):
         self.assertGreaterEqual(vals["db_maxconn"], 8)
 
 
+class ComputePgTests(unittest.TestCase):
+    def _odoo(self, **kw):
+        base = dict(ram_mb=16384, cpus=8, disk_type="ssd", reserve_ram_mb=1024, reserve_cpu=0)
+        base.update(kw)
+        return optimize_odoo.compute_odoo(**base)
+
+    def test_key_order_and_types(self):
+        pg = optimize_odoo.compute_pg(16384, self._odoo(), "ssd")
+        self.assertEqual(
+            tuple(pg.keys()),
+            (
+                "max_connections",
+                "shared_buffers_mb",
+                "effective_cache_size_mb",
+                "maintenance_work_mem_mb",
+                "work_mem_mb",
+                "effective_io_concurrency",
+                "random_page_cost",
+                "wal_buffers",
+            ),
+        )
+        self.assertIsInstance(pg["random_page_cost"], float)
+        self.assertEqual(pg["wal_buffers"], -1)
+        for k in ("max_connections", "shared_buffers_mb", "effective_cache_size_mb",
+                  "maintenance_work_mem_mb", "work_mem_mb", "effective_io_concurrency"):
+            self.assertIsInstance(pg[k], int, k)
+
+    def test_sizing_16gb(self):
+        pg = optimize_odoo.compute_pg(16384, self._odoo(), "ssd")
+        self.assertEqual(pg["shared_buffers_mb"], 4096)
+        self.assertEqual(pg["effective_cache_size_mb"], 11469)
+        self.assertEqual(pg["maintenance_work_mem_mb"], 819)
+        self.assertGreaterEqual(pg["work_mem_mb"], 4)
+        self.assertLessEqual(pg["work_mem_mb"], 64)
+
+    def test_maintenance_work_mem_capped_at_2048(self):
+        pg = optimize_odoo.compute_pg(131072, self._odoo(ram_mb=131072, cpus=32, reserve_ram_mb=4096), "ssd")
+        self.assertEqual(pg["maintenance_work_mem_mb"], 2048)
+
+    def test_max_connections_floor_100(self):
+        pg = optimize_odoo.compute_pg(4096, self._odoo(ram_mb=4096, cpus=2), "ssd")
+        self.assertGreaterEqual(pg["max_connections"], 100)
+
+    def test_disk_type_hdd(self):
+        pg = optimize_odoo.compute_pg(16384, self._odoo(), "hdd")
+        self.assertEqual(pg["effective_io_concurrency"], 2)
+        self.assertEqual(pg["random_page_cost"], 4.0)
+
+    def test_disk_type_ssd(self):
+        pg = optimize_odoo.compute_pg(16384, self._odoo(), "ssd")
+        self.assertEqual(pg["effective_io_concurrency"], 200)
+        self.assertEqual(pg["random_page_cost"], 1.1)
+
+
 if __name__ == "__main__":
     unittest.main()

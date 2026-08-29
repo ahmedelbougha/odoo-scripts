@@ -72,6 +72,25 @@ def compute_odoo(ram_mb, cpus, disk_type, reserve_ram_mb, reserve_cpu):
     return vals
 
 
+def compute_pg(ram_mb, odoo_vals, disk_type):
+    workers = odoo_vals["workers"]
+    cron = odoo_vals["max_cron_threads"]
+    db_maxconn = odoo_vals["db_maxconn"]
+
+    max_connections = max(100, workers * db_maxconn + cron + 20)
+
+    pg = OrderedDict()
+    pg["max_connections"] = int(max_connections)
+    pg["shared_buffers_mb"] = int(round(0.25 * ram_mb))
+    pg["effective_cache_size_mb"] = int(round(0.70 * ram_mb))
+    pg["maintenance_work_mem_mb"] = int(min(2048, round(0.05 * ram_mb)))
+    pg["work_mem_mb"] = int(_clamp(4, 64, (0.25 * ram_mb) / max_connections))
+    pg["effective_io_concurrency"] = 200 if disk_type == "ssd" else 2
+    pg["random_page_cost"] = 1.1 if disk_type == "ssd" else 4.0
+    pg["wal_buffers"] = -1
+    return pg
+
+
 def main():
     raise SystemExit("not implemented yet")
 
