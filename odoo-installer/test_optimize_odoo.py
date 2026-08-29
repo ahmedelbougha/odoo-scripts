@@ -1,4 +1,6 @@
+import os
 import re
+import tempfile
 import unittest
 
 import optimize_odoo
@@ -223,6 +225,81 @@ class RenderPgDropinTests(unittest.TestCase):
                 "wal_buffers",
             ],
         )
+
+
+class RewriteOdooConfTests(unittest.TestCase):
+    def _write(self, text):
+        fd, p = tempfile.mkstemp(suffix=".conf")
+        os.close(fd)
+        with open(p, "w") as f:
+            f.write(text)
+        self.addCleanup(os.unlink, p)
+        return p
+
+    def _vals(self):
+        return optimize_odoo.compute_odoo(
+            ram_mb=16384, cpus=8, disk_type="ssd", reserve_ram_mb=1024, reserve_cpu=0
+        )
+
+    def test_no_options_section_raises(self):
+        p = self._write("[other]\nfoo = bar\n")
+        with self.assertRaises(SystemExit):
+            optimize_odoo.rewrite_odoo_conf(p, self._vals())
+
+    def test_replaces_existing_managed_key_and_preserves_others(self):
+        original = (
+            "[options]\n"
+            "admin_passwd = SECRET\n"
+            "db_user = odoo17\n"
+            "workers = 0\n"
+            "addons_path = /opt/odoo17/addons\n"
+        )
+        p = self._write(original)
+        vals = self._vals()
+        optimize_odoo.rewrite_odoo_conf(p, vals)
+        out = open(p).read()
+        self.assertIn("admin_passwd = SECRET\n", out)
+        self.assertIn("db_user = odoo17\n", out)
+        self.assertIn("addons_path = /opt/odoo17/addons\n", out)
+        self.assertIn(f"workers = {vals['workers']}\n", out)
+        self.assertNotIn("workers = 0\n", out)
+
+    def test_appends_missing_managed_keys(self):
+        p = self._write("[options]\nadmin_passwd = SECRET\n")
+        vals = self._vals()
+        optimize_odoo.rewrite_odoo_conf(p, vals)
+        out = open(p).read()
+        for k in optimize_odoo.MANAGED_ODOO_KEYS:
+            self.assertIn(f"{k} = {vals[k]}\n", out)
+        self.assertTrue(out.endswith("\n"))
+        self.assertFalse(out.endswith("\n\n"))
+
+    def test_does_not_touch_keys_outside_options_section(self):
+        original = (
+            "[options]\n"
+            "workers = 1\n"
+            "[queue_job]\n"
+            "workers = 99\n"   # same name, different section -- must stay
+        )
+        p = self._write(original)
+        vals = self._vals()
+        optimize_odoo.rewrite_odoo_conf(p, vals)
+        out = open(p).read()
+        self.assertIn("[queue_job]\nworkers = 99\n", out)
+        self.assertIn(f"[options]\nworkers = {vals['workers']}\n", out)
+
+    def test_preserves_comments_and_blank_lines(self):
+        original = (
+            "[options]\n"
+            "; my comment\n"
+            "\n"
+            "workers = 2\n"
+        )
+        p = self._write(original)
+        optimize_odoo.rewrite_odoo_conf(p, self._vals())
+        out = open(p).read()
+        self.assertIn("; my comment\n", out)
+        self.assertIn("\n\n", out)
 
 
 if __name__ == "__main__":

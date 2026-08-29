@@ -126,6 +126,44 @@ def pg_confdir(os_name, pg_version, override):
     )
 
 
+def rewrite_odoo_conf(path, odoo_vals):
+    lines = Path(path).read_text().splitlines()
+
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == "[options]":
+            header_idx = i
+            break
+    if header_idx is None:
+        raise SystemExit(f"{path}: no [options] section; not a valid Odoo config")
+
+    # find end of the options section
+    end_idx = len(lines)
+    for i in range(header_idx + 1, len(lines)):
+        if re.match(r"^\s*\[.+\]\s*$", lines[i]):
+            end_idx = i
+            break
+
+    seen = set()
+    out = lines[: header_idx + 1]
+    for i in range(header_idx + 1, end_idx):
+        line = lines[i]
+        m = re.match(r"^(\s*)([A-Za-z0-9_]+)(\s*)=.*$", line)
+        if m and m.group(2) in MANAGED_ODOO_KEYS:
+            key = m.group(2)
+            out.append(f"{key} = {odoo_vals[key]}")
+            seen.add(key)
+        else:
+            out.append(line)
+
+    for key in MANAGED_ODOO_KEYS:
+        if key not in seen:
+            out.append(f"{key} = {odoo_vals[key]}")
+
+    out.extend(lines[end_idx:])
+    Path(path).write_text("\n".join(out) + "\n")
+
+
 def main():
     raise SystemExit("not implemented yet")
 
