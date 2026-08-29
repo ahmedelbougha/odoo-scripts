@@ -145,6 +145,35 @@ class ComputePgTests(unittest.TestCase):
         self.assertEqual(pg["random_page_cost"], 1.1)
 
 
+class PgConfdirTests(unittest.TestCase):
+    def test_override_wins(self):
+        self.assertEqual(
+            optimize_odoo.pg_confdir("ubuntu", 16, "/custom/path"), "/custom/path"
+        )
+
+    def test_ubuntu(self):
+        self.assertEqual(
+            optimize_odoo.pg_confdir("ubuntu", 16, None),
+            "/etc/postgresql/16/main/conf.d",
+        )
+
+    def test_centos(self):
+        self.assertEqual(
+            optimize_odoo.pg_confdir("centos", 13, None),
+            "/var/lib/pgsql/13/data/conf.d",
+        )
+
+    def test_rhel_same_as_centos(self):
+        self.assertEqual(
+            optimize_odoo.pg_confdir("rhel", 13, None),
+            "/var/lib/pgsql/13/data/conf.d",
+        )
+
+    def test_unknown_os_without_override_raises(self):
+        with self.assertRaises(SystemExit):
+            optimize_odoo.pg_confdir("gentoo", 16, None)
+
+
 class RenderPgDropinTests(unittest.TestCase):
     def _text(self):
         odoo = optimize_odoo.compute_odoo(

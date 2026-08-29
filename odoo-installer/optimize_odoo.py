@@ -114,6 +114,18 @@ def render_pg_dropin(pg_vals, ram_mb, cpus, disk_type):
     return "\n".join(lines) + "\n"
 
 
+def pg_confdir(os_name, pg_version, override):
+    if override:
+        return override
+    if os_name == "ubuntu":
+        return f"/etc/postgresql/{pg_version}/main/conf.d"
+    if os_name in ("centos", "rhel"):
+        return f"/var/lib/pgsql/{pg_version}/data/conf.d"
+    raise SystemExit(
+        f"cannot resolve PostgreSQL conf.d for OS '{os_name}'; pass --pg-confdir"
+    )
+
+
 def main():
     raise SystemExit("not implemented yet")
 
