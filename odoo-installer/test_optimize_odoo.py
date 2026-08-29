@@ -122,8 +122,8 @@ class ComputePgTests(unittest.TestCase):
         self.assertEqual(pg["shared_buffers_mb"], 4096)
         self.assertEqual(pg["effective_cache_size_mb"], 11469)
         self.assertEqual(pg["maintenance_work_mem_mb"], 819)
-        self.assertGreaterEqual(pg["work_mem_mb"], 4)
-        self.assertLessEqual(pg["work_mem_mb"], 64)
+        self.assertEqual(pg["work_mem_mb"], 30)
+        self.assertEqual(pg["max_connections"], 134)
 
     def test_maintenance_work_mem_capped_at_2048(self):
         pg = optimize_odoo.compute_pg(131072, self._odoo(ram_mb=131072, cpus=32, reserve_ram_mb=4096), "ssd")
@@ -131,7 +131,7 @@ class ComputePgTests(unittest.TestCase):
 
     def test_max_connections_floor_100(self):
         pg = optimize_odoo.compute_pg(4096, self._odoo(ram_mb=4096, cpus=2), "ssd")
-        self.assertGreaterEqual(pg["max_connections"], 100)
+        self.assertEqual(pg["max_connections"], 100)
 
     def test_disk_type_hdd(self):
         pg = optimize_odoo.compute_pg(16384, self._odoo(), "hdd")
