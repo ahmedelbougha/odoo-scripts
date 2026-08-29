@@ -211,8 +211,66 @@ def rewrite_odoo_conf(path, odoo_vals):
     Path(path).write_text("\n".join(out) + "\n")
 
 
-def main():
-    raise SystemExit("not implemented yet")
+def build_parser():
+    ap = argparse.ArgumentParser(description="Tune Odoo + PostgreSQL for the host hardware.")
+    ap.add_argument("--odoo-version", type=int, required=True)
+    ap.add_argument("--odoo-conf", required=True)
+    ap.add_argument("--pg-version", type=int, required=True)
+    ap.add_argument("--pg-confdir", default=None)
+    ap.add_argument("--disk-type", choices=["ssd", "hdd"], default="ssd")
+    ap.add_argument("--reserve-ram-mb", type=int, default=1024)
+    ap.add_argument("--reserve-cpu", type=int, default=0)
+    ap.add_argument("--dry-run", action="store_true")
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    os_name = detect_os()
+    ram_mb, cpus, free_disk_mb = host_facts(args.odoo_conf)
+
+    if not os.path.exists(args.odoo_conf):
+        raise SystemExit(f"{args.odoo_conf}: not found")
+
+    usable_ram = ram_mb - args.reserve_ram_mb
+    if usable_ram < 1024:
+        raise SystemExit(
+            "not enough usable RAM to tune (need >= 1024 MB after --reserve-ram-mb)"
+        )
+
+    odoo_vals = compute_odoo(ram_mb, cpus, args.disk_type, args.reserve_ram_mb, args.reserve_cpu)
+    pg_vals = compute_pg(ram_mb, odoo_vals, args.disk_type)
+    confdir = pg_confdir(os_name, args.pg_version, args.pg_confdir)
+    dropin_text = render_pg_dropin(pg_vals, ram_mb, cpus, args.disk_type)
+
+    if args.dry_run:
+        print(f"# host: ram={ram_mb}MB cpus={cpus} free_disk={free_disk_mb}MB os={os_name}")
+        print("# --- odoo [options] managed keys ---")
+        for k in MANAGED_ODOO_KEYS:
+            print(f"{k} = {odoo_vals[k]}")
+        print(f"# --- {confdir}/{PG_DROPIN_NAME} ---")
+        print(dropin_text, end="")
+        return
+
+    backup_file(args.odoo_conf)
+    rewrite_odoo_conf(args.odoo_conf, odoo_vals)
+
+    os.makedirs(confdir, exist_ok=True)
+    Path(f"{confdir}/{PG_DROPIN_NAME}").write_text(dropin_text)
+
+    if os_name in ("centos", "rhel"):
+        pg_conf = f"/var/lib/pgsql/{args.pg_version}/data/postgresql.conf"
+        if not ensure_include_dir(pg_conf):
+            print(f"WARNING: {pg_conf} not found; ensure include_dir = 'conf.d' is set manually")
+
+    print("\nConfigs written. Run these when ready (this script restarts nothing):")
+    print(f"  systemctl restart odoo{args.odoo_version}")
+    if os_name == "ubuntu":
+        print("  systemctl restart postgresql")
+    elif os_name in ("centos", "rhel"):
+        print(f"  systemctl restart postgresql-{args.pg_version}")
+    else:
+        print(f"  systemctl restart <your postgresql service>  # OS '{os_name}' unrecognized")
 
 
 if __name__ == "__main__":

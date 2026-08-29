@@ -1,5 +1,8 @@
+import contextlib
+import io
 import os
 import re
+import shutil
 import tempfile
 import unittest
 
@@ -371,6 +374,77 @@ class RewriteOdooConfTests(unittest.TestCase):
         # Must end with exactly one newline, not two or more
         self.assertTrue(out.endswith("\n"), "File must end with newline")
         self.assertFalse(out.endswith("\n\n"), "File must not end with multiple newlines")
+
+
+class MainDryRunTests(unittest.TestCase):
+    def _conf(self):
+        fd, p = tempfile.mkstemp(suffix=".conf")
+        os.close(fd)
+        with open(p, "w") as f:
+            f.write("[options]\nadmin_passwd = SECRET\ndb_user = odoo17\n")
+        self.addCleanup(os.unlink, p)
+        self.addCleanup(lambda: os.path.exists(p + ".bak") and os.unlink(p + ".bak"))
+        return p
+
+    def test_build_parser_defaults(self):
+        args = optimize_odoo.build_parser().parse_args(
+            ["--odoo-version", "17", "--odoo-conf", "/x", "--pg-version", "16"]
+        )
+        self.assertEqual(args.disk_type, "ssd")
+        self.assertEqual(args.reserve_ram_mb, 1024)
+        self.assertEqual(args.reserve_cpu, 0)
+        self.assertFalse(args.dry_run)
+
+    def test_dry_run_prints_and_does_not_mutate(self):
+        p = self._conf()
+        before = open(p).read()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            optimize_odoo.main(
+                [
+                    "--odoo-version", "17",
+                    "--odoo-conf", p,
+                    "--pg-version", "16",
+                    "--pg-confdir", "/tmp/does-not-matter",
+                    "--dry-run",
+                ]
+            )
+        out = buf.getvalue()
+        self.assertIn("odoo [options] managed keys", out)
+        self.assertIn("workers = ", out)
+        self.assertIn("shared_buffers = ", out)
+        self.assertIn("/tmp/does-not-matter/99-odoo-tuning.conf", out)
+        self.assertEqual(open(p).read(), before)  # unchanged
+        self.assertFalse(os.path.exists(p + ".bak"))
+
+    def test_missing_conf_raises(self):
+        with self.assertRaises(SystemExit):
+            optimize_odoo.main(
+                ["--odoo-version", "17", "--odoo-conf", "/no/such.conf",
+                 "--pg-version", "16", "--pg-confdir", "/tmp/x", "--dry-run"]
+            )
+
+    def test_apply_writes_both_files(self):
+        p = self._conf()
+        confdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, confdir)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            optimize_odoo.main(
+                ["--odoo-version", "17", "--odoo-conf", p,
+                 "--pg-version", "16", "--pg-confdir", confdir]
+            )
+        out = buf.getvalue()
+        # odoo conf got managed keys, kept secrets
+        conf_after = open(p).read()
+        self.assertIn("admin_passwd = SECRET", conf_after)
+        self.assertIn("workers = ", conf_after)
+        self.assertTrue(os.path.exists(p + ".bak"))
+        # drop-in written
+        self.assertTrue(os.path.exists(os.path.join(confdir, "99-odoo-tuning.conf")))
+        # restart instructions printed, nothing restarted
+        self.assertIn("systemctl restart odoo17", out)
+        self.assertIn("restarts nothing", out)
 
 
 if __name__ == "__main__":
