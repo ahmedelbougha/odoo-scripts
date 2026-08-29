@@ -161,6 +161,9 @@ def rewrite_odoo_conf(path, odoo_vals):
             out.append(f"{key} = {odoo_vals[key]}")
 
     out.extend(lines[end_idx:])
+    # Normalize trailing newline: strip trailing empty strings, then add exactly one
+    while out and out[-1] == "":
+        out.pop()
     Path(path).write_text("\n".join(out) + "\n")
 
 

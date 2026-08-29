@@ -301,6 +301,19 @@ class RewriteOdooConfTests(unittest.TestCase):
         self.assertIn("; my comment\n", out)
         self.assertIn("\n\n", out)
 
+    def test_normalizes_trailing_newline_exactly_one(self):
+        # Input has all managed keys already present, plus trailing blank lines
+        all_keys = "\n".join(
+            f"{k} = 0" for k in optimize_odoo.MANAGED_ODOO_KEYS
+        )
+        original = "[options]\n" + all_keys + "\n\n"
+        p = self._write(original)
+        optimize_odoo.rewrite_odoo_conf(p, self._vals())
+        out = open(p).read()
+        # Must end with exactly one newline, not two or more
+        self.assertTrue(out.endswith("\n"), "File must end with newline")
+        self.assertFalse(out.endswith("\n\n"), "File must not end with multiple newlines")
+
 
 if __name__ == "__main__":
     unittest.main()
