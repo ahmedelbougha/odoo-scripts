@@ -81,9 +81,6 @@ def main():
     for c in npm_cmds:
         run(c)
 
-    for c in pip_cmds:
-        run(c)
-
     run("id -u odoo >/dev/null 2>&1 || adduser --system --home=/opt/odoo --group odoo", check=False)
 
     run(f"sudo -u postgres psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='{db_user}'\" | grep -q 1 || "
@@ -111,6 +108,8 @@ def main():
     run(f"python3 -m venv {base}/venv")
     run(f"{base}/venv/bin/pip install wheel")
     run(f"{base}/venv/bin/pip install -r {base}/requirements.txt")
+    for c in pip_cmds:
+        run(f"{base}/venv/bin/{c}")
 
     Path("/etc/odoo").mkdir(exist_ok=True)
 
