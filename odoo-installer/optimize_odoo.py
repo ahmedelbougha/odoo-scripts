@@ -126,6 +126,50 @@ def pg_confdir(os_name, pg_version, override):
     )
 
 
+def detect_os(release_path="/etc/os-release"):
+    try:
+        text = Path(release_path).read_text()
+    except OSError:
+        return "unknown"
+    for line in text.splitlines():
+        if line.startswith("ID="):
+            return line[3:].strip().strip('"').strip("'").lower()
+    return "unknown"
+
+
+def host_facts(conf_path):
+    ram_mb = 0
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                ram_mb = int(line.split()[1]) // 1024
+                break
+    except OSError:
+        pass
+
+    cpus = os.cpu_count() or 1
+
+    d = os.path.dirname(os.path.abspath(conf_path))
+    if not os.path.isdir(d):
+        d = "/"
+    free_disk_mb = shutil.disk_usage(d).free // (1024 * 1024)
+
+    return ram_mb, cpus, free_disk_mb
+
+
+def ensure_include_dir(pg_conf_path):
+    p = Path(pg_conf_path)
+    if not p.exists():
+        return False
+    for line in p.read_text().splitlines():
+        if re.match(r"^\s*include_dir\s*=\s*'?conf\.d'?", line):
+            return True
+    backup_file(pg_conf_path)
+    with open(pg_conf_path, "a") as f:
+        f.write("include_dir = 'conf.d'\n")
+    return True
+
+
 def rewrite_odoo_conf(path, odoo_vals):
     lines = Path(path).read_text().splitlines()
 

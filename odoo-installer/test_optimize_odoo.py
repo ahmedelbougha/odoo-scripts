@@ -227,6 +227,64 @@ class RenderPgDropinTests(unittest.TestCase):
         )
 
 
+class DetectOsTests(unittest.TestCase):
+    def _write(self, text):
+        fd, p = tempfile.mkstemp()
+        os.close(fd)
+        with open(p, "w") as f:
+            f.write(text)
+        self.addCleanup(os.unlink, p)
+        return p
+
+    def test_ubuntu(self):
+        p = self._write('NAME="Ubuntu"\nID=ubuntu\nVERSION_ID="22.04"\n')
+        self.assertEqual(optimize_odoo.detect_os(p), "ubuntu")
+
+    def test_centos_quoted(self):
+        p = self._write('ID="centos"\n')
+        self.assertEqual(optimize_odoo.detect_os(p), "centos")
+
+    def test_missing_file(self):
+        self.assertEqual(optimize_odoo.detect_os("/no/such/os-release"), "unknown")
+
+
+class HostFactsTests(unittest.TestCase):
+    def test_returns_three_positive_ints(self):
+        ram, cpus, disk = optimize_odoo.host_facts(__file__)
+        self.assertIsInstance(ram, int)
+        self.assertGreater(ram, 0)
+        self.assertGreaterEqual(cpus, 1)
+        self.assertGreater(disk, 0)
+
+
+class EnsureIncludeDirTests(unittest.TestCase):
+    def _write(self, text):
+        fd, p = tempfile.mkstemp(suffix=".conf")
+        os.close(fd)
+        with open(p, "w") as f:
+            f.write(text)
+        self.addCleanup(os.unlink, p)
+        # also clean the .bak if created
+        self.addCleanup(lambda: os.path.exists(p + ".bak") and os.unlink(p + ".bak"))
+        return p
+
+    def test_missing_file_returns_false(self):
+        self.assertFalse(optimize_odoo.ensure_include_dir("/no/such/postgresql.conf"))
+
+    def test_already_present_no_change(self):
+        p = self._write("shared_buffers = 128MB\ninclude_dir = 'conf.d'\n")
+        before = open(p).read()
+        self.assertTrue(optimize_odoo.ensure_include_dir(p))
+        self.assertEqual(open(p).read(), before)
+
+    def test_appends_when_absent(self):
+        p = self._write("shared_buffers = 128MB\n#include_dir = 'conf.d'\n")
+        self.assertTrue(optimize_odoo.ensure_include_dir(p))
+        out = open(p).read()
+        self.assertIn("\ninclude_dir = 'conf.d'\n", out)
+        self.assertTrue(os.path.exists(p + ".bak"))
+
+
 class RewriteOdooConfTests(unittest.TestCase):
     def _write(self, text):
         fd, p = tempfile.mkstemp(suffix=".conf")
