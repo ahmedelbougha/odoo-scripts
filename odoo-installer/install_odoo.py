@@ -4,8 +4,10 @@ Odoo Installer (Ubuntu 22.04+)
 Supports: Odoo 17+ Community / Enterprise
 """
 
-import argparse, json, os, secrets, shutil, subprocess, sys
+import argparse, json, os, re, secrets, shutil, subprocess, sys
 from pathlib import Path
+
+PYTHON_VERSION_RE = re.compile(r"^3\.\d+$")
 
 WKHTMLTOPDF_URL = (
     "https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/"
@@ -38,10 +40,20 @@ def main():
     ap.add_argument("--github-user")
     ap.add_argument("--github-token")
     ap.add_argument("--port", type=int, default=8069)
+    ap.add_argument("--python-version", default=None,
+                     help="Python version to install and use for Odoo's venv, e.g. 3.8 or 3.11. "
+                          "Defaults to the distro's system python3. A non-default version is "
+                          "installed from the deadsnakes PPA.")
     ap.add_argument("--with-rtl", action="store_true",
                      help="Install rtlcss for right-to-left language support (Arabic, Hebrew, etc.)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    if args.python_version and not PYTHON_VERSION_RE.match(args.python_version):
+        raise SystemExit(
+            f"--python-version must be major.minor, e.g. 3.8 or 3.11 "
+            f"(got {args.python_version!r})"
+        )
 
     v = args.version
     base = f"/opt/odoo{v}"
@@ -49,13 +61,32 @@ def main():
     db_pass = randpwd()
     admin_pass = randpwd()
 
+    pyver = args.python_version
+    python_bin = f"python{pyver}" if pyver else "python3"
+
     cmds = [
         "apt-get update",
-        "apt-get install -y git curl wget build-essential python3-dev python3-pip python3-venv "
-        "libxml2-dev libxslt1-dev libldap2-dev libsasl2-dev libpq-dev libjpeg-dev "
-        "libffi-dev libssl-dev zlib1g-dev postgresql nginx npm "
-        "xfonts-75dpi xfonts-base fontconfig libjpeg-turbo8 libxrender1"
     ]
+
+    if pyver:
+        cmds.append(
+            "apt-get install -y software-properties-common && "
+            "add-apt-repository -y ppa:deadsnakes/ppa && apt-get update"
+        )
+        cmds.append(
+            f"apt-get install -y git curl wget build-essential python{pyver} python{pyver}-dev "
+            f"python{pyver}-venv python3-pip "
+            "libxml2-dev libxslt1-dev libldap2-dev libsasl2-dev libpq-dev libjpeg-dev "
+            "libffi-dev libssl-dev zlib1g-dev postgresql nginx npm "
+            "xfonts-75dpi xfonts-base fontconfig libjpeg-turbo8 libxrender1"
+        )
+    else:
+        cmds.append(
+            "apt-get install -y git curl wget build-essential python3-dev python3-pip python3-venv "
+            "libxml2-dev libxslt1-dev libldap2-dev libsasl2-dev libpq-dev libjpeg-dev "
+            "libffi-dev libssl-dev zlib1g-dev postgresql nginx npm "
+            "xfonts-75dpi xfonts-base fontconfig libjpeg-turbo8 libxrender1"
+        )
 
     npm_cmds = []
     if args.with_rtl:
@@ -105,7 +136,7 @@ def main():
         )
         addons += f",{base}/custom/enterprise"
 
-    run(f"python3 -m venv {base}/venv")
+    run(f"{python_bin} -m venv {base}/venv")
     run(f"{base}/venv/bin/pip install wheel")
     run(f"{base}/venv/bin/pip install -r {base}/requirements.txt")
     for c in pip_cmds:

@@ -1,4 +1,10 @@
 .worktrees/
 __pycache__/
 *.pyc
+
+# Ignore loose Markdown (planning notes, scratch docs) anywhere,
+# but always keep README.md files.
 *.md
+!README.md
+!*/README.md
+!**/README.md

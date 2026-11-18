@@ -4,7 +4,7 @@ Odoo Installer (CentOS 7.9)
 Supports: Odoo 15 Community / Enterprise
 """
 
-import argparse, json, os, secrets, shutil, subprocess, sys
+import argparse, json, os, re, secrets, shutil, subprocess, sys
 from pathlib import Path
 
 WKHTMLTOPDF_URL = (
@@ -12,7 +12,17 @@ WKHTMLTOPDF_URL = (
     "wkhtmltox-0.12.6.1-2.centos7.x86_64.rpm"
 )
 
-SCL_PYTHON = "/opt/rh/rh-python38/root/usr/bin/python3.8"
+DEFAULT_PYTHON_VERSION = "3.8"
+PYTHON_VERSION_RE = re.compile(r"^3\.\d+$")
+
+def scl_package(pyver):
+    """e.g. '3.8' -> 'rh-python38'"""
+    major, minor = pyver.split(".")
+    return f"rh-python{major}{minor}"
+
+def scl_python_bin(pyver):
+    pkg = scl_package(pyver)
+    return f"/opt/rh/{pkg}/root/usr/bin/python{pyver}"
 
 def run(cmd, check=True):
     print(">", cmd)
@@ -40,10 +50,20 @@ def main():
     ap.add_argument("--github-user")
     ap.add_argument("--github-token")
     ap.add_argument("--port", type=int, default=8069)
+    ap.add_argument("--python-version", default=DEFAULT_PYTHON_VERSION,
+                     help=f"Python version to install via SCL and use for Odoo's venv, e.g. 3.8 "
+                          f"(default {DEFAULT_PYTHON_VERSION}). Must be available as an "
+                          f"rh-python<XY> SCL package on CentOS 7.")
     ap.add_argument("--with-rtl", action="store_true",
                      help="Install rtlcss for right-to-left language support (Arabic, Hebrew, etc.)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    if not PYTHON_VERSION_RE.match(args.python_version):
+        raise SystemExit(
+            f"--python-version must be major.minor, e.g. 3.8 or 3.9 "
+            f"(got {args.python_version!r})"
+        )
 
     v = args.version
     base = f"/opt/odoo{v}"
@@ -51,10 +71,13 @@ def main():
     db_pass = randpwd()
     admin_pass = randpwd()
 
+    scl_pkg = scl_package(args.python_version)
+    SCL_PYTHON = scl_python_bin(args.python_version)
+
     cmds = [
         "yum install -y epel-release",
         "yum install -y centos-release-scl",
-        "yum install -y git curl wget gcc gcc-c++ make rh-python38 rh-python38-python-devel "
+        f"yum install -y git curl wget gcc gcc-c++ make {scl_pkg} {scl_pkg}-python-devel "
         "libxml2-devel libxslt-devel openldap-devel cyrus-sasl-devel postgresql-devel "
         "libjpeg-turbo-devel libffi-devel openssl-devel zlib-devel nginx "
         "xorg-x11-fonts-75dpi xorg-x11-fonts-Type1 fontconfig libXrender libXext",
@@ -75,7 +98,7 @@ def main():
 
     pip_cmds = [
         f"{SCL_PYTHON} -m pip install --upgrade pip wheel",
-        f"scl enable rh-python38 -- pip3 install libsass",
+        f"scl enable {scl_pkg} -- pip3 install libsass",
     ]
 
     if args.dry_run:

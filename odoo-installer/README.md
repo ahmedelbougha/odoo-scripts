@@ -6,7 +6,7 @@ A single-file Python script that installs and configures [Odoo](https://www.odoo
 
 Running the script performs the following steps:
 
-1. Installs system dependencies (`git`, `build-essential`, Python dev headers, PostgreSQL, Nginx, etc.) via `apt-get`.
+1. Installs system dependencies (`git`, `build-essential`, Python dev headers, PostgreSQL, Nginx, etc.) via `apt-get`. If `--python-version` is passed, adds the `deadsnakes` PPA and installs that Python version instead of the distro default.
 2. Installs the official patched-Qt build of `wkhtmltopdf` (required by Odoo for PDF report generation), if not already installed.
 3. Installs `libsass` via `pip3`, which Odoo uses to compile its SCSS assets — required for the web UI to render correctly.
 4. Installs `rtlcss` via `npm`, if `--with-rtl` is passed — only needed to support right-to-left languages (Arabic, Hebrew, etc.); Odoo skips RTL asset generation if it's absent.
@@ -67,6 +67,7 @@ python3 install_odoo.py --version 17 --edition community --domain odoo.example.c
 | `--github-user` | Only for Enterprise | — | GitHub username with access to `odoo/enterprise` |
 | `--github-token` | Only for Enterprise | — | GitHub personal access token |
 | `--port` | No | `8069` | Local port Odoo listens on (proxied by Nginx) |
+| `--python-version` | No | system `python3` | Python version to install (via `deadsnakes` PPA) and use for Odoo's venv. Major.minor only, e.g. `3.8` or `3.11` (not `3.8.10`) |
 | `--with-rtl` | No | `False` | Install `rtlcss` for right-to-left language support (Arabic, Hebrew, etc.) |
 | `--dry-run` | No | `False` | Print the apt install commands and exit without changing anything |
 
